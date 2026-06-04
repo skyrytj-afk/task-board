@@ -47,6 +47,14 @@ returns boolean language sql stable security definer set search_path = public as
                  where p.id = auth.uid() and p.role = 'admin');
 $$;
 
+-- 쓰기 권한: 승인된 admin 또는 editor 만. viewer 는 읽기만(서버에서 강제).
+create or replace function public.is_editor()
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.profiles p
+                 where p.id = auth.uid() and p.approved = true
+                   and p.role in ('admin','editor'));
+$$;
+
 -- ---------------------------------------------------------------------------
 -- 2) nodes : 자유 중첩 트리 (folder / page). OneNote식 섹션그룹>섹션>페이지를 표현.
 -- ---------------------------------------------------------------------------
@@ -135,8 +143,10 @@ create trigger tasks_insert_trg before insert on public.tasks
 
 -- ---------------------------------------------------------------------------
 -- 5) Row Level Security : 실제 접근 통제의 핵심. 모든 테이블에 정책 명시.
---    개인별 격리 모델: 승인된 사용자는 "자기 데이터만" 읽고 씁니다.
---    (owner_id = auth.uid() 인 행만 접근. 다른 사람 데이터는 보이지 않음.)
+--    공유 보드 + 역할 기반 모델:
+--      - 승인된 사용자(approved)는 보드 전체를 "읽기" 가능 (편집 계정/읽기 계정이 같은 내용을 봄).
+--      - "쓰기/수정/삭제"는 admin·editor 만 (viewer 는 서버가 거부 → 읽기 전용 계정).
+--    승인 안 된 가입자는 아무것도 못 봄.
 -- ---------------------------------------------------------------------------
 alter table public.profiles enable row level security;
 alter table public.nodes    enable row level security;
@@ -151,25 +161,25 @@ create policy profiles_self_select  on public.profiles for select using (id = au
 create policy profiles_admin_select on public.profiles for select using (public.is_admin());
 create policy profiles_admin_update on public.profiles for update using (public.is_admin());
 
--- nodes : 승인된 본인 소유 행만 (owner_id = auth.uid())
+-- nodes : 승인자는 전체 읽기, 쓰기/수정/삭제는 admin·editor 만
 drop policy if exists nodes_read   on public.nodes;
 drop policy if exists nodes_write  on public.nodes;
 drop policy if exists nodes_update on public.nodes;
 drop policy if exists nodes_delete on public.nodes;
-create policy nodes_read   on public.nodes for select using (owner_id = auth.uid() and public.is_approved());
-create policy nodes_write  on public.nodes for insert with check (owner_id = auth.uid() and public.is_approved());
-create policy nodes_update on public.nodes for update using (owner_id = auth.uid() and public.is_approved()) with check (owner_id = auth.uid());
-create policy nodes_delete on public.nodes for delete using (owner_id = auth.uid() and public.is_approved());
+create policy nodes_read   on public.nodes for select using (public.is_approved());
+create policy nodes_write  on public.nodes for insert with check (public.is_editor());
+create policy nodes_update on public.nodes for update using (public.is_editor()) with check (public.is_editor());
+create policy nodes_delete on public.nodes for delete using (public.is_editor());
 
--- tasks : 승인된 본인 소유 행만
+-- tasks : 승인자는 전체 읽기, 쓰기/수정/삭제는 admin·editor 만
 drop policy if exists tasks_read   on public.tasks;
 drop policy if exists tasks_write  on public.tasks;
 drop policy if exists tasks_update on public.tasks;
 drop policy if exists tasks_delete on public.tasks;
-create policy tasks_read   on public.tasks for select using (owner_id = auth.uid() and public.is_approved());
-create policy tasks_write  on public.tasks for insert with check (owner_id = auth.uid() and public.is_approved());
-create policy tasks_update on public.tasks for update using (owner_id = auth.uid() and public.is_approved()) with check (owner_id = auth.uid());
-create policy tasks_delete on public.tasks for delete using (owner_id = auth.uid() and public.is_approved());
+create policy tasks_read   on public.tasks for select using (public.is_approved());
+create policy tasks_write  on public.tasks for insert with check (public.is_editor());
+create policy tasks_update on public.tasks for update using (public.is_editor()) with check (public.is_editor());
+create policy tasks_delete on public.tasks for delete using (public.is_editor());
 
 -- ---------------------------------------------------------------------------
 -- 6) 첫 admin 지정 (아래 이메일을 본인 가입 이메일로 바꾼 뒤 한 번 실행)

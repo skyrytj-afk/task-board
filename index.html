@@ -153,8 +153,9 @@ const state = {
   search:"", activeTag:null, view:"board",
   readonly: localStorage.getItem("tb_readonly")==="1",   // 기기별 읽기전용 잠금(회사 PC용)
 };
-// 개인별 격리: 승인된 사용자는 자기 데이터 편집 가능. 단, 이 기기가 읽기전용 모드면 무조건 읽기만.
-const canWrite = ()=> !!(state.profile && state.profile.approved) && !state.readonly;
+// 공유 보드 + 역할 기반: 승인된 admin/editor 만 편집 가능. viewer 는 읽기만(서버 RLS도 동일하게 강제).
+// 추가로, 이 기기가 읽기전용 모드면 admin/editor 라도 편집 차단(회사 PC 실수 방지).
+const canWrite = ()=> !!(state.profile && state.profile.approved && (state.profile.role==="admin"||state.profile.role==="editor")) && !state.readonly;
 
 // ---------------------------------------------------------------------------
 // 부팅
