@@ -1,0 +1,6 @@
+# 비밀 키는 절대 커밋하지 않습니다
+.env
+.env.*
+*service*key*
+*.key
+.DS_Store

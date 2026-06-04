@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Task Board</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --border:#2a2f3a;
+    --txt:#e7e9ee; --muted:#9aa3b2; --accent:#5b8cff; --accent2:#3a6df0;
+    --a:#ff6b6b; --b:#ffb454; --c:#4cc38a; --danger:#ff5d5d; --ok:#4cc38a;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--txt);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
+  button{font:inherit;color:inherit;cursor:pointer}
+  input,textarea,select{font:inherit;color:var(--txt);background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:8px 10px}
+  textarea{width:100%;resize:vertical;min-height:120px}
+  a{color:var(--accent)}
+  .hidden{display:none!important}
+
+  /* layout */
+  #app{display:flex;flex-direction:column;height:100%}
+  header{display:flex;gap:10px;align-items:center;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--border);flex-wrap:wrap}
+  header .title{font-weight:700;font-size:15px;margin-right:4px}
+  header .grow{flex:1}
+  header input[type=search]{min-width:160px}
+  .btn{background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:7px 12px}
+  .btn:hover{border-color:var(--accent)}
+  .btn.primary{background:var(--accent2);border-color:var(--accent2)}
+  .btn.danger{border-color:var(--danger);color:var(--danger)}
+  .pill{padding:2px 8px;border-radius:999px;border:1px solid var(--border);background:var(--panel2);font-size:12px}
+
+  #tagbar{display:flex;gap:6px;flex-wrap:wrap;padding:6px 12px;background:var(--panel);border-bottom:1px solid var(--border)}
+  .tagchip{cursor:pointer;font-size:12px;padding:3px 9px;border-radius:999px;border:1px solid var(--border);background:var(--panel2);color:var(--muted)}
+  .tagchip.active{background:var(--accent2);border-color:var(--accent2);color:#fff}
+
+  #main{flex:1;display:flex;min-height:0}
+  #sidebar{width:300px;min-width:200px;max-width:50%;background:var(--panel);border-right:1px solid var(--border);overflow:auto;padding:8px}
+  #content{flex:1;overflow:auto;padding:16px 20px}
+
+  /* tree */
+  .tree{list-style:none;margin:0;padding:0}
+  .tree ul{list-style:none;margin:0;padding-left:16px}
+  .node{display:flex;align-items:center;gap:4px;padding:3px 6px;border-radius:6px;cursor:pointer;white-space:nowrap}
+  .node:hover{background:var(--panel2)}
+  .node.sel{background:var(--accent2);color:#fff}
+  .node .tw{width:14px;display:inline-block;text-align:center;color:var(--muted)}
+  .node .ic{width:16px;text-align:center}
+  .node .nm{overflow:hidden;text-overflow:ellipsis}
+  .node .cnt{margin-left:auto;color:var(--muted);font-size:11px}
+  .node.sel .cnt{color:#dbe4ff}
+
+  /* tasks */
+  .task{display:flex;align-items:flex-start;gap:8px;padding:8px;border:1px solid var(--border);border-radius:10px;background:var(--panel);margin-bottom:8px}
+  .task.done{opacity:.55}
+  .task.done .ttext{text-decoration:line-through}
+  .task input[type=checkbox]{width:18px;height:18px;margin-top:2px}
+  .task .ttext{flex:1}
+  .badge{font-weight:700;font-size:11px;border-radius:6px;padding:1px 7px;margin-right:6px}
+  .badge.A{background:rgba(255,107,107,.18);color:var(--a);border:1px solid var(--a)}
+  .badge.B{background:rgba(255,180,84,.18);color:var(--b);border:1px solid var(--b)}
+  .badge.C{background:rgba(76,195,138,.18);color:var(--c);border:1px solid var(--c)}
+  .due{font-size:12px;color:var(--muted);margin-left:6px}
+  .due.over{color:var(--danger);font-weight:700}
+  .due.soon{color:var(--b);font-weight:700}
+  .ttags{display:inline-flex;gap:4px;margin-left:6px}
+  .ttag{font-size:11px;color:var(--accent)}
+  .task .row{display:flex;align-items:center;flex-wrap:wrap}
+  .task .acts{display:flex;gap:6px;margin-left:8px}
+  .iconbtn{background:none;border:none;color:var(--muted);padding:2px 4px}
+  .iconbtn:hover{color:var(--txt)}
+
+  .md{border:1px solid var(--border);border-radius:10px;padding:12px 14px;background:var(--panel);margin-top:8px}
+  .md h1,.md h2,.md h3{margin:.4em 0}
+  .md pre{background:#0b0d12;padding:10px;border-radius:8px;overflow:auto}
+  .md code{background:#0b0d12;padding:1px 5px;border-radius:5px}
+  .md ul{padding-left:20px}
+
+  .sectiontitle{display:flex;align-items:center;gap:10px;margin:6px 0 12px}
+  .sectiontitle h2{margin:0;font-size:18px}
+  .muted{color:var(--muted)}
+  .center{display:flex;align-items:center;justify-content:center;height:100%}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:24px;max-width:420px;width:100%}
+  .card h1{margin:0 0 4px;font-size:20px}
+  .field{display:flex;flex-direction:column;gap:4px;margin:12px 0}
+  .field label{font-size:12px;color:var(--muted)}
+  .err{color:var(--danger);font-size:13px;min-height:18px}
+  .ok{color:var(--ok);font-size:13px}
+  .quickadd{display:flex;gap:8px;margin:10px 0 16px}
+  .quickadd input{flex:1}
+  .statgrid{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+  .stat{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:14px 18px;min-width:120px}
+  .stat .n{font-size:26px;font-weight:800}
+  .stat .l{color:var(--muted);font-size:12px}
+  @media (max-width:680px){
+    #sidebar{position:absolute;z-index:5;height:calc(100% - 0px);box-shadow:0 0 40px #000}
+    #sidebar.collapsed{display:none}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="topbar" class="hidden">
+    <button class="btn" id="menuBtn" title="트리 토글">☰</button>
+    <span class="title">🗂️ Task Board</span>
+    <input type="search" id="search" placeholder="전체 검색…" />
+    <button class="btn" id="viewBoard">보드</button>
+    <button class="btn" id="viewDash">대시보드</button>
+    <span class="grow"></span>
+    <span class="pill" id="whoami"></span>
+    <button class="btn" id="refreshBtn" title="새로고침">⟳</button>
+    <button class="btn" id="logoutBtn">로그아웃</button>
+  </header>
+  <div id="tagbar" class="hidden"></div>
+  <div id="main" class="hidden">
+    <div id="sidebar"></div>
+    <div id="content"></div>
+  </div>
+
+  <!-- 로그인 / 셋업 / 승인대기 화면들 -->
+  <div id="gate" class="center"></div>
+</div>
+
+<script src="vendor/supabase.js"></script>
+<script src="vendor/purify.min.js"></script>
+<script>
+"use strict";
+// ===========================================================================
+// 설정: Supabase 프로젝트 URL 과 anon(public) 키.
+// (anon 키는 공개돼도 RLS가 보호하므로 안전. service_role 키는 절대 넣지 말 것!)
+// Supabase 대시보드 > Project Settings > API 에서 복사.
+// ===========================================================================
+const CONFIG = {
+  SUPABASE_URL: "YOUR_SUPABASE_URL",
+  SUPABASE_ANON_KEY: "YOUR_SUPABASE_ANON_KEY",
+};
+
+const $ = (s,r=document)=>r.querySelector(s);
+const el = (tag,props={},...kids)=>{const n=document.createElement(tag);
+  for(const k in props){ if(k==="class")n.className=props[k]; else if(k==="html")n.innerHTML=props[k];
+    else if(k.startsWith("on"))n.addEventListener(k.slice(2),props[k]); else if(props[k]!=null)n.setAttribute(k,props[k]); }
+  for(const c of kids.flat()){ if(c!=null) n.append(c.nodeType?c:document.createTextNode(c)); }
+  return n;};
+const esc = s => String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const todayStr = ()=> new Date().toLocaleDateString("sv");      // YYYY-MM-DD (local)
+
+const state = {
+  client:null, session:null, profile:null,
+  nodes:[], tasks:[],
+  selectedId:null, expanded:new Set(JSON.parse(localStorage.getItem("tb_expanded")||"[]")),
+  search:"", activeTag:null, view:"board",
+};
+const canWrite = ()=> state.profile && state.profile.approved && (state.profile.role==="admin"||state.profile.role==="editor");
+
+// ---------------------------------------------------------------------------
+// 부팅
+// ---------------------------------------------------------------------------
+function isConfigured(){ return CONFIG.SUPABASE_URL.startsWith("http") && CONFIG.SUPABASE_ANON_KEY.length>20; }
+
+window.addEventListener("DOMContentLoaded", init);
+
+async function init(){
+  if(!isConfigured()){ return showSetup(); }
+  state.client = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+  const { data:{ session } } = await state.client.auth.getSession();
+  state.session = session;
+  state.client.auth.onAuthStateChange((_e,s)=>{ state.session=s; route(); });
+  route();
+}
+
+async function route(){
+  if(!state.session){ return showLogin(); }
+  // 프로필(승인/역할) 로드
+  const { data:prof, error } = await state.client.from("profiles").select("*").eq("id", state.session.user.id).maybeSingle();
+  if(error){ return showLogin("프로필을 불러오지 못했습니다: "+error.message); }
+  state.profile = prof;
+  if(!prof || !prof.approved){ return showPending(); }
+  await loadData();
+  showApp();
+}
+
+// ---------------------------------------------------------------------------
+// 화면: 셋업 / 로그인 / 승인대기
+// ---------------------------------------------------------------------------
+function gate(node){ $("#topbar").classList.add("hidden"); $("#tagbar").classList.add("hidden"); $("#main").classList.add("hidden");
+  const g=$("#gate"); g.classList.remove("hidden"); g.innerHTML=""; g.append(node); }
+
+function showSetup(){
+  gate(el("div",{class:"card"},
+    el("h1",{},"설정이 필요합니다"),
+    el("p",{class:"muted"},"index.html 상단 CONFIG 에 Supabase 프로젝트 URL 과 anon 키를 입력하세요."),
+    el("p",{class:"muted"},"Supabase 대시보드 → Project Settings → API 에서 복사할 수 있습니다. 자세한 절차는 README.md 참고."),
+  ));
+}
+
+function showLogin(msg){
+  const email=el("input",{type:"email",placeholder:"you@example.com",autocomplete:"username"});
+  const pw=el("input",{type:"password",placeholder:"비밀번호",autocomplete:"current-password"});
+  const err=el("div",{class:"err"},msg||"");
+  const info=el("div",{class:"ok"});
+  const doLogin=async()=>{ err.textContent=""; info.textContent="";
+    const { error } = await state.client.auth.signInWithPassword({email:email.value.trim(),password:pw.value});
+    if(error) err.textContent="로그인 실패: "+error.message; };
+  const doSignup=async()=>{ err.textContent=""; info.textContent="";
+    const { error } = await state.client.auth.signUp({email:email.value.trim(),password:pw.value});
+    if(error){ err.textContent="가입 실패: "+error.message; return; }
+    info.textContent="가입 요청됨. 이메일 확인이 필요할 수 있고, 관리자 승인 후 이용 가능합니다."; };
+  gate(el("div",{class:"card"},
+    el("h1",{},"🗂️ Task Board"),
+    el("p",{class:"muted"},"로그인하세요. 신규 가입은 관리자 승인 후 이용할 수 있습니다."),
+    el("div",{class:"field"}, el("label",{},"이메일"), email),
+    el("div",{class:"field"}, el("label",{},"비밀번호"), pw),
+    err, info,
+    el("div",{style:"display:flex;gap:8px;margin-top:8px"},
+      el("button",{class:"btn primary",onclick:doLogin,style:"flex:1"},"로그인"),
+      el("button",{class:"btn",onclick:doSignup,style:"flex:1"},"가입 요청"),
+    ),
+  ));
+  pw.addEventListener("keydown",e=>{if(e.key==="Enter")doLogin();});
+}
+
+function showPending(){
+  gate(el("div",{class:"card"},
+    el("h1",{},"승인 대기 중"),
+    el("p",{class:"muted"},`${esc(state.session.user.email)} 계정은 아직 승인되지 않았습니다.`),
+    el("p",{class:"muted"},"관리자가 승인하면 이용할 수 있습니다."),
+    el("button",{class:"btn",style:"margin-top:8px",onclick:()=>state.client.auth.signOut()},"로그아웃"),
+  ));
+}
+
+// ---------------------------------------------------------------------------
+// 데이터 로드
+// ---------------------------------------------------------------------------
+async function loadData(){
+  const [n,t] = await Promise.all([
+    state.client.from("nodes").select("*").order("position").order("created_at"),
+    state.client.from("tasks").select("*").order("position").order("created_at"),
+  ]);
+  if(n.error||t.error){ alert("로드 오류: "+((n.error||t.error).message)); return; }
+  state.nodes = n.data||[]; state.tasks = t.data||[];
+  if(state.selectedId && !state.nodes.some(x=>x.id===state.selectedId)) state.selectedId=null;
+}
+async function reload(){ await loadData(); render(); }
+
+// ---------------------------------------------------------------------------
+// 앱 셸 렌더
+// ---------------------------------------------------------------------------
+function showApp(){
+  $("#gate").classList.add("hidden");
+  $("#topbar").classList.remove("hidden");
+  $("#tagbar").classList.remove("hidden");
+  $("#main").classList.remove("hidden");
+  $("#whoami").textContent = `${state.profile.email||""} · ${state.profile.role}`;
+  $("#search").value = state.search;
+  bindShell();
+  render();
+}
+let shellBound=false;
+function bindShell(){
+  if(shellBound) return; shellBound=true;
+  $("#logoutBtn").onclick=()=>state.client.auth.signOut();
+  $("#refreshBtn").onclick=()=>reload();
+  $("#menuBtn").onclick=()=>$("#sidebar").classList.toggle("collapsed");
+  $("#viewBoard").onclick=()=>{state.view="board";render();};
+  $("#viewDash").onclick=()=>{state.view="dashboard";render();};
+  $("#search").addEventListener("input",e=>{state.search=e.target.value.trim();render();});
+}
+function render(){ renderTagbar(); renderTree(); if(state.view==="dashboard") renderDashboard(); else renderBoard(); }
+
+// ---------------------------------------------------------------------------
+// 태그바
+// ---------------------------------------------------------------------------
+function allTags(){ const s=new Set(); state.tasks.forEach(t=>(t.tags||[]).forEach(x=>s.add(x))); return [...s].sort(); }
+function renderTagbar(){
+  const bar=$("#tagbar"); bar.innerHTML="";
+  const tags=allTags();
+  if(!tags.length){ bar.append(el("span",{class:"muted",style:"font-size:12px"},"태그 없음")); return; }
+  tags.forEach(tag=>{
+    bar.append(el("span",{class:"tagchip"+(state.activeTag===tag?" active":""),
+      onclick:()=>{state.activeTag = state.activeTag===tag?null:tag; render();}}, "#"+tag));
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 트리(좌측)
+// ---------------------------------------------------------------------------
+function childrenOf(pid){ return state.nodes.filter(n=>n.parent_id===pid); }
+function openTaskCount(nodeId){ return state.tasks.filter(t=>t.node_id===nodeId && !t.done).length; }
+function toggleExpand(id){ if(state.expanded.has(id))state.expanded.delete(id); else state.expanded.add(id);
+  localStorage.setItem("tb_expanded",JSON.stringify([...state.expanded])); render(); }
+
+function renderTree(){
+  const sb=$("#sidebar"); sb.innerHTML="";
+  if(canWrite()){
+    sb.append(el("div",{style:"display:flex;gap:6px;margin-bottom:8px"},
+      el("button",{class:"btn",style:"flex:1",onclick:()=>createNode("folder",null)},"+ 폴더"),
+      el("button",{class:"btn",style:"flex:1",onclick:()=>createNode("page",null)},"+ 페이지"),
+    ));
+  }
+  const root=el("ul",{class:"tree"});
+  buildTree(root,null);
+  if(!state.nodes.length) sb.append(el("p",{class:"muted"},"아직 항목이 없습니다."+(canWrite()?" 위 버튼으로 추가하세요.":"")));
+  sb.append(root);
+}
+function buildTree(ul,pid){
+  childrenOf(pid).forEach(n=>{
+    const kids=childrenOf(n.id);
+    const isFolder=n.type==="folder";
+    const open=state.expanded.has(n.id);
+    const row=el("li",{});
+    const cnt=openTaskCount(n.id);
+    const node=el("div",{class:"node"+(state.selectedId===n.id?" sel":""),onclick:(e)=>{
+        if(isFolder){ toggleExpand(n.id); } else { state.selectedId=n.id; state.view="board"; render(); }
+      }},
+      el("span",{class:"tw"}, isFolder?(open?"▾":"▸"):""),
+      el("span",{class:"ic"}, isFolder?"📁":"📄"),
+      el("span",{class:"nm"}, n.title||"(제목 없음)"),
+      (!isFolder && cnt>0)? el("span",{class:"cnt"}, String(cnt)) : null,
+    );
+    if(canWrite()) node.append(nodeMenu(n));
+    row.append(node);
+    if(isFolder && open){ const sub=el("ul",{}); buildTree(sub,n.id); row.append(sub); }
+    ul.append(row);
+  });
+}
+function nodeMenu(n){
+  const wrap=el("span",{class:"acts",style:"margin-left:auto"});
+  if(n.type==="folder"){
+    wrap.append(el("button",{class:"iconbtn",title:"하위 폴더",onclick:(e)=>{e.stopPropagation();createNode("folder",n.id);}},"📁+"));
+    wrap.append(el("button",{class:"iconbtn",title:"하위 페이지",onclick:(e)=>{e.stopPropagation();createNode("page",n.id);}},"📄+"));
+  }
+  wrap.append(el("button",{class:"iconbtn",title:"이름변경",onclick:(e)=>{e.stopPropagation();renameNode(n);}},"✎"));
+  wrap.append(el("button",{class:"iconbtn",title:"삭제",onclick:(e)=>{e.stopPropagation();deleteNode(n);}},"🗑"));
+  return wrap;
+}
+
+// ---------------------------------------------------------------------------
+// 보드(본문)
+// ---------------------------------------------------------------------------
+function matchesFilter(task){
+  if(state.activeTag && !(task.tags||[]).includes(state.activeTag)) return false;
+  if(state.search){ const q=state.search.toLowerCase();
+    const hay=(task.text||"")+" "+(task.tags||[]).join(" ");
+    if(!hay.toLowerCase().includes(q)) return false; }
+  return true;
+}
+function renderBoard(){
+  const c=$("#content"); c.innerHTML="";
+  // 검색/태그 필터가 활성화면, 전체에서 매칭되는 태스크를 보여줌(페이지 무관)
+  const filtering = state.search || state.activeTag;
+  if(filtering){
+    const matched=state.tasks.filter(matchesFilter);
+    c.append(el("div",{class:"sectiontitle"}, el("h2",{}, `검색 결과 (${matched.length})`),
+      el("button",{class:"btn",onclick:()=>{state.search="";state.activeTag=null;$("#search").value="";render();}},"필터 해제")));
+    if(!matched.length) c.append(el("p",{class:"muted"},"일치하는 태스크가 없습니다."));
+    matched.forEach(t=>c.append(taskRow(t,true)));
+    return;
+  }
+  const node = state.nodes.find(n=>n.id===state.selectedId);
+  if(!node){ c.append(el("p",{class:"muted"},"왼쪽에서 페이지를 선택하세요.")); return; }
+
+  const head=el("div",{class:"sectiontitle"}, el("h2",{}, node.title||"(제목 없음)"));
+  c.append(head);
+
+  // 태스크 목록
+  const tasks=state.tasks.filter(t=>t.node_id===node.id);
+  if(canWrite()){
+    const qi=el("input",{placeholder:'예) (A) 보고서 작성 @2026-06-10 #업무 #긴급',
+      onkeydown:async(e)=>{ if(e.key==="Enter"&&qi.value.trim()){ await addTaskFromInput(node.id,qi.value); qi.value=""; } }});
+    c.append(el("div",{class:"quickadd"}, qi, el("button",{class:"btn primary",onclick:async()=>{ if(qi.value.trim()){await addTaskFromInput(node.id,qi.value); qi.value="";}}},"추가")));
+  }
+  if(!tasks.length) c.append(el("p",{class:"muted"},"태스크가 없습니다."));
+  tasks.forEach(t=>c.append(taskRow(t,false)));
+
+  // 본문(메모) markdown
+  c.append(el("div",{class:"sectiontitle",style:"margin-top:22px"}, el("h2",{style:"font-size:15px"},"📝 메모")));
+  if(canWrite()){
+    const ta=el("textarea",{}); ta.value=node.content||"";
+    const save=el("button",{class:"btn primary",onclick:async()=>{ await updateNode(node.id,{content:ta.value}); }},"메모 저장");
+    const preview=el("div",{class:"md",html:mdToHtml(node.content||"*(메모 없음)*")});
+    c.append(ta, el("div",{style:"margin:8px 0"},save), el("div",{class:"muted",style:"font-size:12px"},"미리보기:"), preview);
+  } else {
+    c.append(el("div",{class:"md",html:mdToHtml(node.content||"*(메모 없음)*")}));
+  }
+}
+
+function taskRow(t, showPath){
+  const wrap=el("div",{class:"task"+(t.done?" done":"")});
+  const cb=el("input",{type:"checkbox"}); cb.checked=!!t.done; cb.disabled=!canWrite();
+  cb.addEventListener("change",()=>updateTask(t.id,{done:cb.checked}));
+  const row=el("div",{class:"row"});
+  if(t.priority) row.append(el("span",{class:"badge "+t.priority}, t.priority));
+  row.append(el("span",{class:"ttext"}, t.text||""));
+  if(t.due_date){ const cls=dueClass(t.due_date); row.append(el("span",{class:"due "+cls}, "📅 "+t.due_date)); }
+  if(t.tags&&t.tags.length){ const tg=el("span",{class:"ttags"}); t.tags.forEach(x=>tg.append(el("span",{class:"ttag"},"#"+x))); row.append(tg); }
+  if(showPath){ row.append(el("span",{class:"due"}, "· "+nodePath(t.node_id))); }
+  const main=el("div",{style:"flex:1"}, row);
+  wrap.append(cb, main);
+  if(canWrite()){
+    wrap.append(el("div",{class:"acts"},
+      el("button",{class:"iconbtn",title:"수정",onclick:()=>editTask(t)},"✎"),
+      el("button",{class:"iconbtn",title:"삭제",onclick:()=>deleteTask(t.id)},"🗑"),
+    ));
+  }
+  return wrap;
+}
+function dueClass(d){ const today=todayStr(); if(d<today) return "over";
+  const dt=new Date(d), now=new Date(today); const diff=(dt-now)/86400000; return diff<=2?"soon":""; }
+function nodePath(id){ const parts=[]; let n=state.nodes.find(x=>x.id===id);
+  while(n){ parts.unshift(n.title||"?"); n=state.nodes.find(x=>x.id===n.parent_id); } return parts.join(" / "); }
+
+// 입력 파싱: "(A) 내용 @2026-06-10 #tag1 #tag2"
+function parseTaskInput(s){
+  let text=s.trim(); let priority=null, due=null; const tags=[];
+  const pm=text.match(/^\(([ABC])\)\s*/i); if(pm){ priority=pm[1].toUpperCase(); text=text.slice(pm[0].length); }
+  const dm=text.match(/@(\d{4}-\d{2}-\d{2})/); if(dm){ due=dm[1]; text=text.replace(dm[0],""); }
+  text=text.replace(/#([^\s#]+)/g,(_,g)=>{tags.push(g);return "";});
+  return { text:text.trim(), priority, due_date:due, tags };
+}
+
+// ---------------------------------------------------------------------------
+// 대시보드: 최근 30일 완료 추이 (순수 SVG)
+// ---------------------------------------------------------------------------
+function renderDashboard(){
+  const c=$("#content"); c.innerHTML="";
+  c.append(el("div",{class:"sectiontitle"}, el("h2",{},"📊 대시보드")));
+  const total=state.tasks.length, done=state.tasks.filter(t=>t.done).length, open=total-done;
+  const overdue=state.tasks.filter(t=>!t.done&&t.due_date&&t.due_date<todayStr()).length;
+  c.append(el("div",{class:"statgrid"},
+    stat(total,"전체"), stat(open,"미완료"), stat(done,"완료"), stat(overdue,"기한 초과")));
+  // 30일 버킷
+  const days=[]; const base=new Date(todayStr());
+  for(let i=29;i>=0;i--){ const d=new Date(base); d.setDate(base.getDate()-i); days.push(d.toLocaleDateString("sv")); }
+  const counts={}; days.forEach(d=>counts[d]=0);
+  state.tasks.forEach(t=>{ if(t.done_at){ const d=new Date(t.done_at).toLocaleDateString("sv"); if(d in counts) counts[d]++; }});
+  const series=days.map(d=>counts[d]);
+  c.append(el("div",{class:"sectiontitle",style:"margin-top:10px"}, el("h2",{style:"font-size:15px"},"최근 30일 완료 추이")));
+  c.append(lineChart(days,series));
+  const sum=series.reduce((a,b)=>a+b,0);
+  c.append(el("p",{class:"muted"}, `최근 30일 완료 합계: ${sum}건`));
+}
+function stat(n,l){ return el("div",{class:"stat"}, el("div",{class:"n"},String(n)), el("div",{class:"l"},l)); }
+
+function lineChart(labels,data){
+  const W=720,H=240,P=34;
+  const max=Math.max(1,...data);                 // 0 나눗셈 방지
+  const n=data.length;
+  const x=i=> P + (n<=1?0:(i*(W-2*P)/(n-1)));
+  const y=v=> H-P - (v*(H-2*P)/max);
+  const NS="http://www.w3.org/2000/svg";
+  const svg=document.createElementNS(NS,"svg");
+  svg.setAttribute("viewBox",`0 0 ${W} ${H}`); svg.setAttribute("width","100%"); svg.setAttribute("style","max-width:720px;background:var(--panel);border:1px solid var(--border);border-radius:12px");
+  const mk=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+  // y 그리드 + 라벨
+  const ticks=Math.min(max,4);
+  for(let i=0;i<=ticks;i++){ const val=Math.round(max*i/ticks); const yy=y(val);
+    svg.append(mk("line",{x1:P,y1:yy,x2:W-P,y2:yy,stroke:"#2a2f3a","stroke-width":1}));
+    const tx=mk("text",{x:P-6,y:yy+4,fill:"#9aa3b2","font-size":11,"text-anchor":"end"}); tx.textContent=val; svg.append(tx);
+  }
+  // x 라벨(처음/중간/끝)
+  [0,Math.floor((n-1)/2),n-1].forEach(i=>{ const tx=mk("text",{x:x(i),y:H-P+16,fill:"#9aa3b2","font-size":11,"text-anchor":"middle"});
+    tx.textContent=(labels[i]||"").slice(5); svg.append(tx); });
+  // 라인
+  if(n===1){ svg.append(mk("circle",{cx:x(0),cy:y(data[0]),r:4,fill:"#5b8cff"})); }
+  else { const d=data.map((v,i)=>`${i?"L":"M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    svg.append(mk("path",{d,fill:"none",stroke:"#5b8cff","stroke-width":2})); }
+  // 점
+  data.forEach((v,i)=>{ if(v>0) svg.append(mk("circle",{cx:x(i),cy:y(v),r:3,fill:"#5b8cff"})); });
+  return svg;
+}
+
+// ---------------------------------------------------------------------------
+// 쓰기 작업 (editor/admin)
+// ---------------------------------------------------------------------------
+async function guardWrite(){ if(!canWrite()){ alert("편집 권한이 없습니다(읽기 전용)."); return false; } return true; }
+function nextPos(pid){ const sib=childrenOf(pid); return sib.length?Math.max(...sib.map(s=>s.position||0))+1:0; }
+
+async function createNode(type,parentId){
+  if(!await guardWrite())return;
+  const title=prompt(type==="folder"?"새 폴더 이름":"새 페이지 이름", type==="folder"?"새 폴더":"새 페이지");
+  if(title==null)return;
+  if(parentId) state.expanded.add(parentId);
+  const { error } = await state.client.from("nodes").insert({type,parent_id:parentId,title:title.trim(),position:nextPos(parentId)});
+  if(error)return alert("생성 실패: "+error.message);
+  await reload();
+}
+async function renameNode(n){ if(!await guardWrite())return;
+  const title=prompt("이름 변경", n.title); if(title==null)return;
+  const { error } = await state.client.from("nodes").update({title:title.trim()}).eq("id",n.id);
+  if(error)return alert("변경 실패: "+error.message); await reload(); }
+async function deleteNode(n){ if(!await guardWrite())return;
+  const kids=childrenOf(n.id).length, tcount=state.tasks.filter(t=>t.node_id===n.id).length;
+  if(!confirm(`"${n.title}" 삭제할까요?`+(kids||tcount?` (하위 ${kids}개 / 태스크 ${tcount}개도 함께 삭제)`:"")))return;
+  const { error } = await state.client.from("nodes").delete().eq("id",n.id);
+  if(error)return alert("삭제 실패: "+error.message);
+  if(state.selectedId===n.id)state.selectedId=null; await reload(); }
+async function updateNode(id,fields){ if(!await guardWrite())return;
+  const { error } = await state.client.from("nodes").update(fields).eq("id",id);
+  if(error)return alert("저장 실패: "+error.message); await reload(); }
+
+async function addTaskFromInput(nodeId,raw){ if(!await guardWrite())return;
+  const p=parseTaskInput(raw); if(!p.text){ alert("내용을 입력하세요."); return; }
+  const { error } = await state.client.from("tasks").insert({node_id:nodeId, text:p.text, priority:p.priority, due_date:p.due_date, tags:p.tags, position:Date.now()%100000});
+  if(error)return alert("추가 실패: "+error.message); await reload(); }
+async function updateTask(id,fields){ if(!await guardWrite())return;
+  const { error } = await state.client.from("tasks").update(fields).eq("id",id);
+  if(error)return alert("수정 실패: "+error.message); await reload(); }
+async function deleteTask(id){ if(!await guardWrite())return;
+  if(!confirm("태스크를 삭제할까요?"))return;
+  const { error } = await state.client.from("tasks").delete().eq("id",id);
+  if(error)return alert("삭제 실패: "+error.message); await reload(); }
+async function editTask(t){ if(!await guardWrite())return;
+  const cur=`${t.priority?`(${t.priority}) `:""}${t.text}${t.due_date?` @${t.due_date}`:""}${(t.tags||[]).map(x=>" #"+x).join("")}`;
+  const raw=prompt("태스크 수정 — 형식: (A) 내용 @YYYY-MM-DD #태그", cur); if(raw==null)return;
+  const p=parseTaskInput(raw); await updateTask(t.id,{text:p.text,priority:p.priority,due_date:p.due_date,tags:p.tags}); }
+
+// ---------------------------------------------------------------------------
+// 최소 Markdown 렌더 + DOMPurify 살균 (XSS 방지)
+// ---------------------------------------------------------------------------
+function mdToHtml(md){
+  const lines=String(md).replace(/\r\n/g,"\n").split("\n");
+  let html="", inCode=false, inList=false;
+  const inline=s=>esc(s)
+    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g,'<em>$1</em>')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+  for(let raw of lines){
+    if(raw.trim().startsWith("```")){ if(inCode){html+="</code></pre>";inCode=false;} else {if(inList){html+="</ul>";inList=false;}html+="<pre><code>";inCode=true;} continue; }
+    if(inCode){ html+=esc(raw)+"\n"; continue; }
+    const h=raw.match(/^(#{1,3})\s+(.*)$/);
+    const li=raw.match(/^\s*[-*]\s+(.*)$/);
+    if(h){ if(inList){html+="</ul>";inList=false;} html+=`<h${h[1].length}>${inline(h[2])}</h${h[1].length}>`; continue; }
+    if(li){ if(!inList){html+="<ul>";inList=true;} html+=`<li>${inline(li[1])}</li>`; continue; }
+    if(inList){html+="</ul>";inList=false;}
+    if(raw.trim()==="") html+=""; else html+=`<p>${inline(raw)}</p>`;
+  }
+  if(inCode)html+="</code></pre>"; if(inList)html+="</ul>";
+  return window.DOMPurify.sanitize(html,{ALLOWED_TAGS:["h1","h2","h3","p","ul","li","strong","em","code","pre","a","br"],ALLOWED_ATTR:["href","target","rel"]});
+}
+</script>
+</body>
+</html>
