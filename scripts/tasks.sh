@@ -5,6 +5,10 @@
 # 필요한 환경변수 (이 값들은 절대 repo에 커밋하지 마세요):
 #   SUPABASE_URL          예) https://xxxx.supabase.co
 #   SUPABASE_SERVICE_KEY  service_role 키 (RLS 우회, 서버측 전용)
+#   TB_OWNER_ID           대상 사용자의 auth UID (개인별 격리용)
+#       └ 조회: 이 사용자 데이터만 필터 / 추가: 이 사용자 소유로 생성
+#       └ UID 확인: Supabase Authentication > Users, 또는
+#         select id,email from auth.users;  (SQL Editor)
 #
 # 사용 예:
 #   ./scripts/tasks.sh nodes                 # 폴더/페이지 트리 목록(JSON)
@@ -24,14 +28,17 @@ H_KEY=(-H "apikey: ${SUPABASE_SERVICE_KEY}" -H "Authorization: Bearer ${SUPABASE
 JSON=(-H "Content-Type: application/json")
 
 get(){ curl -sS "${H_KEY[@]}" "${REST}/$1"; }
+# TB_OWNER_ID 가 있으면 본인 데이터만 필터(개인별 격리). service_role 은 RLS 우회라 직접 필터 필요.
+OWN=""; [[ -n "${TB_OWNER_ID:-}" ]] && OWN="&owner_id=eq.${TB_OWNER_ID}"
 
 cmd="${1:-help}"
 case "$cmd" in
-  nodes) get "nodes?select=id,parent_id,type,title,position&order=position" ;;
-  tasks) get "tasks?select=*&order=created_at" ;;
-  open)  get "tasks?done=eq.false&select=*&order=due_date" ;;
-  page)  get "tasks?node_id=eq.$2&select=*&order=position" ;;
+  nodes) get "nodes?select=id,parent_id,type,title,position&order=position${OWN}" ;;
+  tasks) get "tasks?select=*&order=created_at${OWN}" ;;
+  open)  get "tasks?done=eq.false&select=*&order=due_date${OWN}" ;;
+  page)  get "tasks?node_id=eq.$2&select=*&order=position${OWN}" ;;
   add)
+    : "${TB_OWNER_ID:?add 에는 TB_OWNER_ID(대상 사용자 UID)가 필요합니다}"
     node_id="$2"; raw="$3"
     # (A) / @YYYY-MM-DD / #tag 파싱
     prio=""; due=""; text="$raw"; tags="[]"
@@ -41,11 +48,11 @@ case "$cmd" in
     tag_arr=$(echo "$text" | grep -oE '#[^[:space:]#]+' | sed 's/#//' || true)
     if [[ -n "$tag_arr" ]]; then tags=$(echo "$tag_arr" | python3 -c 'import sys,json;print(json.dumps([l.strip() for l in sys.stdin if l.strip()]))'); fi
     text=$(echo "$text" | sed -E 's/#[^[:space:]#]+//g' | sed -E 's/^ +| +$//g')
-    body=$(python3 -c 'import sys,json;n,t,p,d,g=sys.argv[1:6];o={"node_id":n,"text":t};
+    body=$(python3 -c 'import sys,json;n,t,p,d,g,o_=sys.argv[1:7];o={"node_id":n,"text":t,"owner_id":o_};
 p=p or None; d=d or None
 if p:o["priority"]=p
 if d:o["due_date"]=d
-o["tags"]=json.loads(g);print(json.dumps(o))' "$node_id" "$text" "$prio" "$due" "$tags")
+o["tags"]=json.loads(g);print(json.dumps(o))' "$node_id" "$text" "$prio" "$due" "$tags" "$TB_OWNER_ID")
     curl -sS "${H_KEY[@]}" "${JSON[@]}" -X POST "${REST}/tasks" -d "$body"
     ;;
   done)  curl -sS "${H_KEY[@]}" "${JSON[@]}" -X PATCH "${REST}/tasks?id=eq.$2" -d '{"done":true}' ;;

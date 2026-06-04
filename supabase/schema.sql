@@ -41,13 +41,6 @@ returns boolean language sql stable security definer set search_path = public as
                  where p.id = auth.uid() and p.approved = true);
 $$;
 
-create or replace function public.can_write()
-returns boolean language sql stable security definer set search_path = public as $$
-  select exists (select 1 from public.profiles p
-                 where p.id = auth.uid() and p.approved = true
-                   and p.role in ('admin','editor'));
-$$;
-
 create or replace function public.is_admin()
 returns boolean language sql stable security definer set search_path = public as $$
   select exists (select 1 from public.profiles p
@@ -59,6 +52,7 @@ $$;
 -- ---------------------------------------------------------------------------
 create table if not exists public.nodes (
   id          uuid primary key default gen_random_uuid(),
+  owner_id    uuid not null default auth.uid() references auth.users(id) on delete cascade,
   parent_id   uuid references public.nodes(id) on delete cascade,
   type        text not null check (type in ('folder','page')),
   title       text not null default '',
@@ -68,12 +62,16 @@ create table if not exists public.nodes (
   updated_at  timestamptz not null default now()
 );
 create index if not exists nodes_parent_idx on public.nodes(parent_id);
+create index if not exists nodes_owner_idx  on public.nodes(owner_id);
+-- 기존 테이블에 owner_id 가 없으면 추가(재실행 안전)
+alter table public.nodes add column if not exists owner_id uuid default auth.uid() references auth.users(id) on delete cascade;
 
 -- ---------------------------------------------------------------------------
 -- 3) tasks : 구조화 태스크 (대시보드/검색 신뢰성 위해 markdown 파싱에 의존하지 않음)
 -- ---------------------------------------------------------------------------
 create table if not exists public.tasks (
   id          uuid primary key default gen_random_uuid(),
+  owner_id    uuid not null default auth.uid() references auth.users(id) on delete cascade,
   node_id     uuid not null references public.nodes(id) on delete cascade,
   text        text not null default '',
   priority    text check (priority in ('A','B','C')),
@@ -86,8 +84,10 @@ create table if not exists public.tasks (
   updated_at  timestamptz not null default now()
 );
 create index if not exists tasks_node_idx   on public.tasks(node_id);
+create index if not exists tasks_owner_idx  on public.tasks(owner_id);
 create index if not exists tasks_done_at_idx on public.tasks(done_at);
 create index if not exists tasks_tags_idx    on public.tasks using gin(tags);
+alter table public.tasks add column if not exists owner_id uuid default auth.uid() references auth.users(id) on delete cascade;
 
 -- ---------------------------------------------------------------------------
 -- 4) 공통 트리거: updated_at 자동 갱신 + done 전환 시 done_at 자동 스탬프
@@ -135,13 +135,14 @@ create trigger tasks_insert_trg before insert on public.tasks
 
 -- ---------------------------------------------------------------------------
 -- 5) Row Level Security : 실제 접근 통제의 핵심. 모든 테이블에 정책 명시.
---    공유 워크스페이스 모델: approved 사용자만 읽기, editor/admin만 쓰기.
+--    개인별 격리 모델: 승인된 사용자는 "자기 데이터만" 읽고 씁니다.
+--    (owner_id = auth.uid() 인 행만 접근. 다른 사람 데이터는 보이지 않음.)
 -- ---------------------------------------------------------------------------
 alter table public.profiles enable row level security;
 alter table public.nodes    enable row level security;
 alter table public.tasks    enable row level security;
 
--- profiles
+-- profiles : 본인 행만(승인/역할 변경은 admin만). admin은 승인 관리를 위해 전체 조회/수정.
 drop policy if exists profiles_self_select  on public.profiles;
 drop policy if exists profiles_admin_select on public.profiles;
 drop policy if exists profiles_admin_update on public.profiles;
@@ -149,27 +150,26 @@ drop policy if exists profiles_self_update  on public.profiles;
 create policy profiles_self_select  on public.profiles for select using (id = auth.uid());
 create policy profiles_admin_select on public.profiles for select using (public.is_admin());
 create policy profiles_admin_update on public.profiles for update using (public.is_admin());
--- (본인은 자기 행을 직접 승인/역할변경 못 함 — admin만 update)
 
--- nodes
+-- nodes : 승인된 본인 소유 행만 (owner_id = auth.uid())
 drop policy if exists nodes_read   on public.nodes;
 drop policy if exists nodes_write  on public.nodes;
 drop policy if exists nodes_update on public.nodes;
 drop policy if exists nodes_delete on public.nodes;
-create policy nodes_read   on public.nodes for select using (public.is_approved());
-create policy nodes_write  on public.nodes for insert with check (public.can_write());
-create policy nodes_update on public.nodes for update using (public.can_write());
-create policy nodes_delete on public.nodes for delete using (public.can_write());
+create policy nodes_read   on public.nodes for select using (owner_id = auth.uid() and public.is_approved());
+create policy nodes_write  on public.nodes for insert with check (owner_id = auth.uid() and public.is_approved());
+create policy nodes_update on public.nodes for update using (owner_id = auth.uid() and public.is_approved()) with check (owner_id = auth.uid());
+create policy nodes_delete on public.nodes for delete using (owner_id = auth.uid() and public.is_approved());
 
--- tasks
+-- tasks : 승인된 본인 소유 행만
 drop policy if exists tasks_read   on public.tasks;
 drop policy if exists tasks_write  on public.tasks;
 drop policy if exists tasks_update on public.tasks;
 drop policy if exists tasks_delete on public.tasks;
-create policy tasks_read   on public.tasks for select using (public.is_approved());
-create policy tasks_write  on public.tasks for insert with check (public.can_write());
-create policy tasks_update on public.tasks for update using (public.can_write());
-create policy tasks_delete on public.tasks for delete using (public.can_write());
+create policy tasks_read   on public.tasks for select using (owner_id = auth.uid() and public.is_approved());
+create policy tasks_write  on public.tasks for insert with check (owner_id = auth.uid() and public.is_approved());
+create policy tasks_update on public.tasks for update using (owner_id = auth.uid() and public.is_approved()) with check (owner_id = auth.uid());
+create policy tasks_delete on public.tasks for delete using (owner_id = auth.uid() and public.is_approved());
 
 -- ---------------------------------------------------------------------------
 -- 6) 첫 admin 지정 (아래 이메일을 본인 가입 이메일로 바꾼 뒤 한 번 실행)

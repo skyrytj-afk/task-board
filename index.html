@@ -151,7 +151,8 @@ const state = {
   selectedId:null, expanded:new Set(JSON.parse(localStorage.getItem("tb_expanded")||"[]")),
   search:"", activeTag:null, view:"board",
 };
-const canWrite = ()=> state.profile && state.profile.approved && (state.profile.role==="admin"||state.profile.role==="editor");
+// 개인별 격리: 승인된 사용자는 자기 데이터를 편집할 수 있음(owner_id 는 DB가 auth.uid()로 자동 설정)
+const canWrite = ()=> !!(state.profile && state.profile.approved);
 
 // ---------------------------------------------------------------------------
 // 부팅

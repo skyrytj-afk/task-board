@@ -2,11 +2,12 @@
 
 로그인으로 보호되는 개인용 task/노트 웹앱입니다. **Supabase**(이메일/비밀번호 로그인 +
 비공개 Postgres DB)를 백엔드로 쓰고, 프론트엔드(단일 페이지 앱)는 **GitHub Pages**에서
-호스팅합니다. 데이터는 Supabase의 Row Level Security(RLS)로 **진짜 비공개**이며, 같은
-데이터를 **Claude**(claude.ai 앱 / Claude Code)가 읽고 정리할 수 있습니다.
+호스팅합니다. 데이터는 Supabase의 Row Level Security(RLS)로 **사용자별로 격리**되어
+**각자 자기 데이터만** 보고 편집합니다(다른 사람 데이터는 보이지 않음). 같은 데이터를
+**Claude**(claude.ai 앱 / Claude Code)가 읽고 정리할 수 있습니다.
 
-- 회사 데스크탑: 웹에서 **열람**(계정을 `viewer`로 두면 읽기 전용).
-- 폰/아이폰: 로그인해서 **편집**(계정이 `editor`/`admin`일 때).
+- 가입은 **관리자 승인** 후 이용(미승인 시 "승인 대기" 화면).
+- 승인된 사용자는 **자기 데이터**를 데스크탑/폰 어디서나 보고 편집.
 - Claude: 같은 DB를 읽어 task를 정리하고 다시 써 줌.
 
 ## 주요 기능
@@ -47,8 +48,9 @@
      set approved = true, role = 'admin'
      where email = 'skyrytj@gmail.com';
    ```
-3. 이후 다른 사람 승인은, admin 계정으로 같은 식으로 `approved`/`role`을 바꾸면 됩니다
-   (`role`: `admin`=관리, `editor`=편집, `viewer`=읽기 전용).
+3. 이후 다른 사람 승인은 같은 식으로 `approved = true` 로 바꾸면 됩니다. 각 사용자는
+   **자기 데이터만** 보고 편집합니다(개인별 격리). `role`은 관리용 구분이며 `admin`만
+   다른 사람을 승인할 수 있습니다.
 
 ## 3) GitHub Pages 배포
 
@@ -70,6 +72,8 @@
 ```bash
 export SUPABASE_URL="https://xxxx.supabase.co"
 export SUPABASE_SERVICE_KEY="eyJ...service_role..."   # 절대 커밋 금지
+export TB_OWNER_ID="<본인 auth UID>"   # 개인별 격리: 대상 사용자 한정
+#   UID 확인: Supabase Authentication > Users, 또는 SQL: select id,email from auth.users;
 
 ./scripts/tasks.sh nodes                 # 폴더/페이지 트리
 ./scripts/tasks.sh open                  # 미완료 태스크
@@ -85,9 +89,10 @@ Supabase의 personal access token + project ref 로 설정합니다(Supabase MCP
 ---
 
 ## 데이터 모델 요약
-- `nodes` — 자유 중첩 트리. `type`=`folder`|`page`, `title`, `content`(페이지 메모 markdown), `parent_id`.
-- `tasks` — `node_id`(페이지), `text`, `priority`(A/B/C), `due_date`, `done`, `done_at`(완료 시 자동), `tags[]`.
-- `profiles` — `role`(admin/editor/viewer), `approved`. **admin이 승인/역할 부여.**
+- `nodes` — 자유 중첩 트리. `owner_id`, `type`=`folder`|`page`, `title`, `content`(메모 markdown), `parent_id`.
+- `tasks` — `owner_id`, `node_id`(페이지), `text`, `priority`(A/B/C), `due_date`, `done`, `done_at`(완료 시 자동), `tags[]`.
+- `profiles` — `role`(admin/editor/viewer), `approved`. **admin이 승인.**
+- **개인별 격리**: 모든 `nodes`/`tasks` 는 `owner_id = auth.uid()` 인 행만 RLS로 접근 가능.
 
 태스크 입력 문법(앱 빠른추가 / 스크립트 공통):
 ```
