@@ -108,6 +108,7 @@
     <button class="btn" id="viewBoard">보드</button>
     <button class="btn" id="viewDash">대시보드</button>
     <span class="grow"></span>
+    <button class="btn" id="roBtn" title="이 기기에서 읽기전용/편집 전환"></button>
     <span class="pill" id="whoami"></span>
     <button class="btn" id="refreshBtn" title="새로고침">⟳</button>
     <button class="btn" id="logoutBtn">로그아웃</button>
@@ -150,9 +151,10 @@ const state = {
   nodes:[], tasks:[],
   selectedId:null, expanded:new Set(JSON.parse(localStorage.getItem("tb_expanded")||"[]")),
   search:"", activeTag:null, view:"board",
+  readonly: localStorage.getItem("tb_readonly")==="1",   // 기기별 읽기전용 잠금(회사 PC용)
 };
-// 개인별 격리: 승인된 사용자는 자기 데이터를 편집할 수 있음(owner_id 는 DB가 auth.uid()로 자동 설정)
-const canWrite = ()=> !!(state.profile && state.profile.approved);
+// 개인별 격리: 승인된 사용자는 자기 데이터 편집 가능. 단, 이 기기가 읽기전용 모드면 무조건 읽기만.
+const canWrite = ()=> !!(state.profile && state.profile.approved) && !state.readonly;
 
 // ---------------------------------------------------------------------------
 // 부팅
@@ -266,8 +268,25 @@ function bindShell(){
   $("#viewBoard").onclick=()=>{state.view="board";render();};
   $("#viewDash").onclick=()=>{state.view="dashboard";render();};
   $("#search").addEventListener("input",e=>{state.search=e.target.value.trim();render();});
+  $("#roBtn").onclick=()=>{
+    if(state.readonly){
+      // 읽기전용 해제(=편집 켜기)는 실수 방지를 위해 확인
+      if(!confirm("편집 모드로 전환할까요?\n회사 PC라면 읽기 전용을 유지하세요.")) return;
+      state.readonly=false;
+    } else {
+      state.readonly=true;
+    }
+    localStorage.setItem("tb_readonly", state.readonly?"1":"0");
+    render();
+  };
 }
-function render(){ renderTagbar(); renderTree(); if(state.view==="dashboard") renderDashboard(); else renderBoard(); }
+function refreshRoButton(){
+  const b=$("#roBtn"); if(!b) return;
+  b.textContent = state.readonly ? "🔒 읽기전용" : "✏️ 편집 가능";
+  b.classList.toggle("primary", !state.readonly);
+  b.classList.toggle("danger", state.readonly);
+}
+function render(){ refreshRoButton(); renderTagbar(); renderTree(); if(state.view==="dashboard") renderDashboard(); else renderBoard(); }
 
 // ---------------------------------------------------------------------------
 // 태그바
