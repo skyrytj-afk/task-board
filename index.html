@@ -123,6 +123,83 @@
   <div id="gate" class="center"></div>
 </div>
 
+<!-- 앱 내장 문서(읽기전용 페이지). 실행되지 않는 text/markdown 블록으로 안전하게 보관. -->
+<script type="text/markdown" id="offlinePlanDoc">
+# 📄 오프라인 지원 계획서
+
+작성일: 2026-06-05 · 대상: Task Board 웹앱(index.html, GitHub Pages) 의 "페이지 오프라인" 동작
+범위: 효과 / 오버헤드 / 사이드 이펙트 + 단계별 실행 계획 + 자료 조사 요약
+
+## 1. 목적 (Why)
+현재 웹앱은 온라인 전제로 동작한다. 페이지(HTML/JS/CSS)와 데이터(Supabase)를 모두 네트워크에서 받으므로, 끊기거나 사내 프록시가 차단하면 빈 화면/로딩 실패가 된다.
+목표:
+- 네트워크가 없어도 앱 셸(화면)이 즉시 뜨고, 본 데이터는 읽을 수 있게 한다.
+- 재방문 로딩 속도를 개선한다(캐시 우선).
+- (선택) 오프라인 변경분을 로컬에 쌓아두었다가 온라인 복귀 시 동기화한다.
+
+## 2. 현재 구조 (As-Is)
+- 앱 셸(HTML/JS/CSS, vendor): 매 방문 네트워크 로드 → 오프라인 시 화면 자체가 안 뜸
+- 데이터(nodes/tasks): Supabase 실시간 조회 → 끊기면 빈 목록/오류
+- 인증 세션: 토큰은 남지만 검증/갱신은 온라인 필요
+- 쓰기(추가/수정/삭제): 즉시 Supabase 반영 → 끊기면 실패
+
+핵심: 앱 셸과 데이터 두 계층 모두 오프라인 대비가 필요하다.
+
+## 3. 구현 방식 (How)
+- 셸 오프라인: Service Worker + Cache API 로 정적 자산 사전 캐시. 정적=cache-first, API=network-first/stale-while-revalidate. manifest 추가 시 PWA(설치·독립 창).
+- 데이터 오프라인: 마지막 nodes/tasks 를 IndexedDB(권장)/localStorage 에 저장 → 오프라인 스냅샷 표시. (선택) 오프라인 변경분을 mutation queue 로 쌓아 복귀 시 전송.
+- 동기화 충돌: Last-Write-Wins(updated_at 최신 우선) 가 개인용엔 충분. CRDT/필드병합은 동시편집 많을 때만(본 앱엔 과함).
+- 권고 순서: (1) 셸 오프라인 → (2) 읽기 캐시 → (3) 쓰기 큐/동기화.
+
+## 4. 기대 효과
+- 즉시 로딩/재방문 속도 향상(네트워크 왕복 제거)
+- 네트워크 단절 내성(빈 화면 방지)
+- 대역폭·서버 부하 절감
+- PWA 앱 경험(설치·독립 창·아이콘)
+
+## 5. 오버헤드 (Cost)
+- 개발 복잡도: 서비스워커 생명주기·캐시 버전 관리 학습(Workbox 로 완화)
+- 빌드/배포: 자산 버전 해시, SW 갱신 로직 추가
+- 저장 공간: 캐시+IndexedDB 디스크 사용(모바일 Cache API 약 50MB/파티션)
+- 메모리/CPU: SW 등록·fetch 가로채기(미미)
+- 유지보수: 캐시 무효화·SW 업데이트 테스트 상시 필요
+
+## 6. 사이드 이펙트 & 리스크 (가장 중요)
+- 갱신 안 됨(Stale cache): 버전 없는 자산 cache-first 시 옛 버전 고정. SW 파일 자체 캐시 시 신규 배포 최대 24h 지연. → 캐시 이름에 버전, SW는 no-cache, API는 network-first, activate 에서 옛 캐시 정리, "새 버전 → 새로고침" 안내.
+- 저장소 제거(Eviction): 디스크 부족 시 LRU 삭제. Safari/iOS 는 7일 미사용 시 스크립트 저장소 전체 삭제. → navigator.storage.persist() + 명시적 JSON 백업.
+- 동기화 충돌/손실: LWW 는 늦게 쓴 쪽이 덮어씀(손실 가능). → 읽기 오프라인부터, 쓰기는 충돌 빈도 확인 후.
+- 보안(사내 환경 특히): 캐시/IndexedDB 는 데이터를 디스크에 평문 잔존. 서비스워커는 세션을 넘어 지속 → XSS 1회 성공이 SW 캐시를 오염시켜 지속적 주입/중간자로 악화될 수 있음. → 민감/회사 데이터는 캐시하지 않음, CSP 적용, 필요 시 암호화, 로그아웃 시 캐시·SW 해제, HTTPS 전제.
+- 디버깅 난이도: "새로고침해도 안 바뀜" 진단이 까다로움 → SW 패널/하드리셋 절차 표준화.
+
+## 7. 단계별 실행 계획
+- Phase 0 — 사전 검토(0.5d): HTTPS 확인, 캐시 대상 자산 확정, 보안 정책(민감정보 제외) 결정
+- Phase 1 — 셸 오프라인 + PWA(1~2d): manifest, service-worker(precache, 버전드 캐시, 정리), 오프라인 폴백, 업데이트 안내. 검증=Lighthouse + 비행기모드
+- Phase 2 — 데이터 읽기 오프라인(1~2d): nodes/tasks IndexedDB 스냅샷, "오프라인 — 마지막 동기화 시각" 배지
+- Phase 3 — (선택) 쓰기 큐+동기화(3~5d, 위험 큼): mutation queue, LWW, 재시도, 충돌 테스트
+- Phase 4 — 관측/운영: 캐시 적중률, storage.estimate(), SW 반영률 모니터링
+
+## 8. 검증/측정 지표
+Lighthouse(PWA/Perf/Best-Practices), 오프라인 로드 성공률, 재방문 로드 시간, 저장 사용량/eviction, (P3) 동기화 지연·충돌·손실 건수
+
+## 9. 권고
+- 어디까지? → Phase 1(셸)+2(읽기) 까지 권장. 쓰기 오프라인(P3)은 효용 확인 후.
+- 민감/회사 데이터 캐시 → 하지 않음(원칙).
+- Workbox → 보일러플레이트 절감(단일 파일이면 간단한 수제 SW도 가능).
+
+## 10. 참고 자료
+- MDN — Offline and background operation: https://developer.mozilla.org/en-US/docs/Web/Progressive_web_apps/Guides/Offline_and_background_operation
+- MDN — Storage quotas and eviction criteria: https://developer.mozilla.org/en-US/docs/Web/API/Storage_API/Storage_quotas_and_eviction_criteria
+- web.dev — Storage for the web: https://web.dev/articles/storage-for-the-web
+- HTTP Archive — Web Almanac 2025 (PWA): https://almanac.httparchive.org/en/2025/pwa
+- Workbox — Service worker deployment: https://developer.chrome.com/docs/workbox/service-worker-deployment
+- Taming PWA Cache Behavior: https://iinteractive.com/resources/blog/taming-pwa-cache-behavior
+- LogRocket — Offline-first frontend apps in 2025: https://blog.logrocket.com/offline-first-frontend-apps-2025-indexeddb-sqlite/
+- Service Worker caches 보안 연구: https://secpriv.wien/fulltext/publik_296700.pdf
+- Chromium — Service Worker Security FAQ: https://chromium.googlesource.com/chromium/src/+/main/docs/security/service-worker-security-faq.md
+
+(이 페이지는 앱에 내장된 읽기전용 문서입니다. 전체 원본: 저장소 docs/offline-plan.md)
+</script>
+
 <script src="vendor/supabase.js"></script>
 <script src="vendor/purify.min.js"></script>
 <script>
@@ -243,7 +320,17 @@ async function loadData(){
   ]);
   if(n.error||t.error){ alert("로드 오류: "+((n.error||t.error).message)); return; }
   state.nodes = n.data||[]; state.tasks = t.data||[];
+  injectBuiltins();
   if(state.selectedId && !state.nodes.some(x=>x.id===state.selectedId)) state.selectedId=null;
+}
+// 코드에 내장된 읽기전용 문서 페이지(서버 데이터 아님). 트리 맨 위에 표시.
+const BUILTIN_PLAN_ID="__builtin_offline_plan__";
+function injectBuiltins(){
+  const doc=document.getElementById("offlinePlanDoc");
+  const md=doc?doc.textContent.trim():"";
+  if(!md) return;
+  state.nodes.unshift({ id:BUILTIN_PLAN_ID, parent_id:null, type:"page",
+    title:"📄 오프라인 계획서", content:md, position:-1, builtin:true });
 }
 async function reload(){ await loadData(); render(); }
 
@@ -339,7 +426,7 @@ function buildTree(ul,pid){
       el("span",{class:"nm"}, n.title||"(제목 없음)"),
       (!isFolder && cnt>0)? el("span",{class:"cnt"}, String(cnt)) : null,
     );
-    if(canWrite()) node.append(nodeMenu(n));
+    if(canWrite() && !n.builtin) node.append(nodeMenu(n));
     row.append(node);
     if(isFolder && open){ const sub=el("ul",{}); buildTree(sub,n.id); row.append(sub); }
     ul.append(row);
@@ -380,6 +467,14 @@ function renderBoard(){
   }
   const node = state.nodes.find(n=>n.id===state.selectedId);
   if(!node){ c.append(el("p",{class:"muted"},"왼쪽에서 페이지를 선택하세요.")); return; }
+
+  // 내장 문서 페이지: 태스크/편집 없이 읽기전용 렌더
+  if(node.builtin){
+    c.append(el("div",{class:"sectiontitle"}, el("h2",{}, node.title||"(제목 없음)"),
+      el("span",{class:"pill"},"읽기전용 문서")));
+    c.append(el("div",{class:"md",html:mdToHtml(node.content||"")}));
+    return;
+  }
 
   const head=el("div",{class:"sectiontitle"}, el("h2",{}, node.title||"(제목 없음)"));
   c.append(head);
