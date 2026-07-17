@@ -217,6 +217,9 @@
     var lines = text.split(/\n+/).map(function(l){ return l.trim(); }).filter(Boolean);
     var out = [];
     lines.forEach(function(line){
+      // strip leading quote markers like "> " so TTS doesn't read them
+      line = line.replace(/^[>\s]+/, '').trim();
+      if(!line) return;
       // strip paragraph markers like [1]
       if(/^\[\d+\]$/.test(line)) return;
       if(hasHangul(line) && !hasEnglish(line)){
