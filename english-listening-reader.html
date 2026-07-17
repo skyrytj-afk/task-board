@@ -133,6 +133,23 @@
     display:none;margin:10px 18px 0;padding:11px 13px;border-radius:10px;
     background:#fdf3e3;color:#8a6a2f;font-size:13px;line-height:1.5;
   }
+  .az-panel{
+    display:none;margin:12px 18px 0;padding:14px;border-radius:12px;
+    background:var(--card);border:1.5px solid var(--line);
+  }
+  .az-panel.on{display:block;}
+  .az-panel h3{font-size:14px;margin-bottom:4px;}
+  .az-panel p{font-size:12.5px;color:var(--ink-soft);margin-bottom:10px;line-height:1.5;}
+  .az-panel input{
+    width:100%;padding:10px 11px;border:1.5px solid var(--line);border-radius:9px;
+    font-size:13px;font-family:inherit;background:var(--paper);color:var(--ink);
+    margin-bottom:8px;
+  }
+  .az-panel input:focus{outline:none;border-color:var(--accent);}
+  .az-row{display:flex;gap:8px;}
+  .az-row .btn-mini{flex:1;}
+  .az-status{font-size:12px;margin-top:8px;color:var(--ink-soft);}
+  .az-status.ok{color:var(--accent);font-weight:700;}
 </style>
 </head>
 <body class="show-kr">
@@ -144,15 +161,29 @@
 
 <div class="voice-warn" id="voiceWarn">영어 음성을 못 찾았어요. 설정 &gt; 손쉬운 사용 &gt; 콘텐츠 말하기 &gt; 음성에서 영어 음성을 다운로드한 뒤 페이지를 새로고침해 주세요.</div>
 
+<div class="az-panel" id="azPanel">
+  <h3>☁️ 프리미엄 음성 (Azure)</h3>
+  <p>Azure Speech 키를 넣으면 어느 기기에서든 성우급 자연스러운 음성이 나와요. 키는 이 기기의 브라우저에만 저장되고, 문장은 음성 생성을 위해 Microsoft 서버로만 전송됩니다.</p>
+  <input id="azKey" type="password" placeholder="Azure Speech 키" autocomplete="off">
+  <input id="azRegion" type="text" placeholder="지역 (예: koreacentral)" autocomplete="off">
+  <div class="az-row">
+    <button class="btn-mini" id="azSave">저장하고 테스트</button>
+    <button class="btn-mini" id="azClear">해제</button>
+  </div>
+  <div class="az-status" id="azStatus"></div>
+</div>
+
 <section class="setup" id="setup">
   <textarea id="input" placeholder="여기에 챕터 텍스트를 붙여넣으세요.&#10;&#10;영어만 붙여넣어도 되고, 영어+한글 대역을 붙여넣으면 한글은 번역으로 자동 인식돼서 영어 아래에 표시돼요."></textarea>
   <p class="hint">텍스트는 이 화면 안에서만 쓰이고 어디에도 저장·전송되지 않아요.</p>
   <button class="btn-primary" id="build">리더 만들기</button>
+  <button class="btn-mini" id="azOpen" style="width:100%;margin-top:10px;">☁️ 프리미엄 음성 설정</button>
 </section>
 
 <div class="controls" id="controls">
   <div class="ctl-row">
     <select id="voiceSel" aria-label="음성 선택"></select>
+    <button class="btn-mini" id="azOpen2">☁️</button>
     <button class="btn-mini" id="reset">새 텍스트</button>
   </div>
   <div class="ctl-row">
@@ -183,9 +214,40 @@
 
   var $ = function(id){ return document.getElementById(id); };
 
+  // --- Azure premium voice (optional) ---
+  var AZ_VOICES = [
+    ['en-US-AvaMultilingualNeural','Ava · 여성 (추천)'],
+    ['en-US-AndrewMultilingualNeural','Andrew · 남성 (추천)'],
+    ['en-US-EmmaMultilingualNeural','Emma · 여성'],
+    ['en-US-BrianMultilingualNeural','Brian · 남성'],
+    ['en-GB-SoniaNeural','Sonia · 영국 여성'],
+    ['en-GB-RyanNeural','Ryan · 영국 남성']
+  ];
+  var az = {
+    key: localStorage.getItem('az_key') || '',
+    region: localStorage.getItem('az_region') || ''
+  };
+  var player = new Audio();
+  var audioCache = {};
+  var speakSeq = 0;
+  function azOn(){ return !!(az.key && az.region); }
+
   function loadVoices(){
-    voices = synth.getVoices().filter(function(v){ return /^en(-|_)/i.test(v.lang); });
     var sel = $('voiceSel');
+    if(azOn()){
+      sel.innerHTML = '';
+      AZ_VOICES.forEach(function(v,i){
+        var o = document.createElement('option');
+        o.value = i;
+        o.textContent = '☁ ' + v[1];
+        sel.appendChild(o);
+      });
+      var saved = parseInt(localStorage.getItem('az_voice') || '0', 10);
+      if(saved >= 0 && saved < AZ_VOICES.length) sel.value = saved;
+      $('voiceWarn').style.display = 'none';
+      return;
+    }
+    voices = synth.getVoices().filter(function(v){ return /^en(-|_)/i.test(v.lang); });
     sel.innerHTML = '';
     if(!voices.length){ $('voiceWarn').style.display = 'block'; return; }
     $('voiceWarn').style.display = 'none';
@@ -236,7 +298,9 @@
 
   function stop(){
     continuous = false;
+    speakSeq++;
     synth.cancel();
+    player.pause();
     setPlaying(-1);
   }
 
@@ -251,8 +315,16 @@
 
   function speak(i){
     synth.cancel();
+    player.pause();
     if(i >= blocks.length){ setPlaying(-1); continuous = false; return; }
-    var u = new SpeechSynthesisUtterance(blocks[i].en.replace(/^\[|\]$/g,''));
+    var text = blocks[i].en.replace(/^\[|\]$/g,'');
+    var seq = ++speakSeq;
+    setPlaying(i);
+    if(azOn()){ azSpeak(text, i, seq); } else { browserSpeak(text, i); }
+  }
+
+  function browserSpeak(text, i){
+    var u = new SpeechSynthesisUtterance(text);
     var vi = parseInt($('voiceSel').value || '0', 10);
     if(voices[vi]) u.voice = voices[vi];
     u.lang = (voices[vi] && voices[vi].lang) || 'en-US';
@@ -261,8 +333,56 @@
       if(continuous){ speak(i+1); } else { setPlaying(-1); }
     };
     u.onerror = function(){ setPlaying(-1); continuous = false; };
-    setPlaying(i);
     synth.speak(u);
+  }
+
+  function xmlEsc(s){
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function getAudio(text){
+    var vi = parseInt($('voiceSel').value || '0', 10);
+    var voice = (AZ_VOICES[vi] || AZ_VOICES[0])[0];
+    var rate = Math.round((parseFloat($('rate').value) - 1) * 100);
+    var k = voice + '|' + rate + '|' + text;
+    if(audioCache[k]) return Promise.resolve(audioCache[k]);
+    var ssml = '<speak version="1.0" xml:lang="en-US"><voice name="' + voice + '">' +
+               '<prosody rate="' + rate + '%">' + xmlEsc(text) + '</prosody></voice></speak>';
+    return fetch('https://' + az.region + '.tts.speech.microsoft.com/cognitiveservices/v1', {
+      method: 'POST',
+      headers: {
+        'Ocp-Apim-Subscription-Key': az.key,
+        'Content-Type': 'application/ssml+xml',
+        'X-Microsoft-OutputFormat': 'audio-24khz-48kbitrate-mono-mp3'
+      },
+      body: ssml
+    }).then(function(r){
+      if(!r.ok) throw new Error('HTTP ' + r.status);
+      return r.blob();
+    }).then(function(b){
+      var u = URL.createObjectURL(b);
+      audioCache[k] = u;
+      return u;
+    });
+  }
+
+  function azSpeak(text, i, seq){
+    getAudio(text).then(function(url){
+      if(seq !== speakSeq) return; // superseded by a newer request
+      player.src = url;
+      player.onended = function(){
+        if(continuous){ speak(i+1); } else { setPlaying(-1); }
+      };
+      player.play();
+      // prefetch next sentence for gapless continuous listening
+      if(continuous && i+1 < blocks.length){
+        getAudio(blocks[i+1].en.replace(/^\[|\]$/g,'')).catch(function(){});
+      }
+    }).catch(function(e){
+      if(seq !== speakSeq) return;
+      setPlaying(-1); continuous = false;
+      alert('프리미엄 음성 요청 실패 (' + e.message + ').\nHTTP 401이면 키, 404면 지역(region)이 잘못된 거예요. ☁️ 설정에서 확인해 주세요.');
+    });
   }
 
   function build(){
@@ -328,6 +448,54 @@
     speak(current >= 0 ? current : 0);
   });
   $('stopAll').addEventListener('click', stop);
+
+  // --- Azure settings panel ---
+  function azStatusUpdate(){
+    var st = $('azStatus');
+    if(azOn()){ st.textContent = '✓ 프리미엄 음성 사용 중 (' + az.region + ')'; st.className = 'az-status ok'; }
+    else { st.textContent = '키가 없으면 이 기기의 기본 음성을 사용해요.'; st.className = 'az-status'; }
+  }
+  function azToggle(){ $('azPanel').classList.toggle('on'); }
+  $('azOpen').addEventListener('click', azToggle);
+  $('azOpen2').addEventListener('click', azToggle);
+  $('azKey').value = az.key;
+  $('azRegion').value = az.region;
+  azStatusUpdate();
+
+  $('azSave').addEventListener('click', function(){
+    var k = $('azKey').value.trim();
+    var r = $('azRegion').value.trim().toLowerCase();
+    if(!k || !r){ alert('키와 지역을 모두 입력해 주세요.'); return; }
+    az.key = k; az.region = r;
+    localStorage.setItem('az_key', k);
+    localStorage.setItem('az_region', r);
+    audioCache = {};
+    loadVoices();
+    azStatusUpdate();
+    var st = $('azStatus');
+    st.textContent = '테스트 중...';
+    getAudio('Premium voice is ready.').then(function(url){
+      player.src = url; player.onended = null; player.play();
+      azStatusUpdate();
+    }).catch(function(e){
+      st.textContent = '✗ 테스트 실패 (' + e.message + ') — 키/지역을 확인해 주세요.';
+      st.className = 'az-status';
+    });
+  });
+
+  $('azClear').addEventListener('click', function(){
+    az.key = ''; az.region = '';
+    localStorage.removeItem('az_key');
+    localStorage.removeItem('az_region');
+    $('azKey').value = ''; $('azRegion').value = '';
+    audioCache = {};
+    loadVoices();
+    azStatusUpdate();
+  });
+
+  $('voiceSel').addEventListener('change', function(){
+    if(azOn()){ localStorage.setItem('az_voice', this.value); audioCache = {}; }
+  });
 })();
 </script>
 </body>
