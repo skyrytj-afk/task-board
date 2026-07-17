@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>웹소설 리스닝 리더</title>
+<style>
+  :root{
+    --paper:#faf7f0;
+    --ink:#2b2926;
+    --ink-soft:#6f6a61;
+    --accent:#1f6f5c;
+    --accent-soft:#e3efe9;
+    --line:#e6e0d4;
+    --card:#ffffff;
+    --kr:#8a8478;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Segoe UI",sans-serif;
+    line-height:1.6;
+    padding-bottom:120px;
+  }
+  header{
+    padding:20px 18px 14px;
+    border-bottom:1px solid var(--line);
+    background:var(--paper);
+  }
+  header h1{
+    font-size:19px;font-weight:700;letter-spacing:-0.3px;
+  }
+  header p{font-size:13px;color:var(--ink-soft);margin-top:3px;}
+
+  .setup{padding:16px 18px;}
+  textarea{
+    width:100%;min-height:170px;
+    border:1.5px solid var(--line);border-radius:12px;
+    background:var(--card);
+    padding:13px;font-size:14px;line-height:1.55;
+    color:var(--ink);resize:vertical;
+    font-family:inherit;
+  }
+  textarea:focus{outline:none;border-color:var(--accent);}
+  .setup .hint{font-size:12.5px;color:var(--ink-soft);margin:8px 2px 12px;}
+  .btn-primary{
+    width:100%;padding:14px;border:none;border-radius:12px;
+    background:var(--accent);color:#fff;
+    font-size:15.5px;font-weight:700;font-family:inherit;
+    cursor:pointer;
+  }
+  .btn-primary:active{opacity:.85;}
+
+  /* controls bar */
+  .controls{
+    display:none;
+    position:sticky;top:0;z-index:10;
+    background:rgba(250,247,240,.96);
+    backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);
+    padding:10px 14px;
+  }
+  .controls.on{display:block;}
+  .ctl-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .ctl-row + .ctl-row{margin-top:8px;}
+  select{
+    flex:1;min-width:0;
+    padding:8px 10px;border:1.5px solid var(--line);border-radius:9px;
+    background:var(--card);font-size:13px;color:var(--ink);font-family:inherit;
+  }
+  .rate-wrap{display:flex;align-items:center;gap:8px;flex:1;}
+  .rate-wrap input[type=range]{flex:1;accent-color:var(--accent);}
+  .rate-val{font-size:12.5px;color:var(--ink-soft);min-width:34px;text-align:right;font-variant-numeric:tabular-nums;}
+  .toggle{
+    display:flex;align-items:center;gap:6px;
+    font-size:13px;color:var(--ink-soft);white-space:nowrap;cursor:pointer;
+  }
+  .toggle input{accent-color:var(--accent);width:16px;height:16px;}
+  .btn-mini{
+    padding:8px 12px;border:1.5px solid var(--line);border-radius:9px;
+    background:var(--card);font-size:12.5px;color:var(--ink-soft);
+    font-family:inherit;cursor:pointer;white-space:nowrap;
+  }
+
+  /* reader */
+  .reader{display:none;padding:6px 16px 30px;}
+  .reader.on{display:block;}
+  .block{
+    display:flex;gap:11px;align-items:flex-start;
+    padding:13px 0;
+    border-bottom:1px solid var(--line);
+  }
+  .play{
+    flex:none;width:38px;height:38px;margin-top:2px;
+    border-radius:50%;border:1.5px solid var(--line);
+    background:var(--card);cursor:pointer;
+    display:flex;align-items:center;justify-content:center;
+    color:var(--accent);
+  }
+  .play svg{width:15px;height:15px;fill:currentColor;}
+  .block.playing .play{background:var(--accent);border-color:var(--accent);color:#fff;}
+  .block .txt{flex:1;min-width:0;}
+  .en{
+    font-family:Georgia,"Times New Roman",serif;
+    font-size:16.5px;line-height:1.62;color:var(--ink);
+  }
+  .block.playing .en{background:var(--accent-soft);border-radius:6px;box-shadow:0 0 0 6px var(--accent-soft);}
+  .kr{
+    font-size:13.5px;color:var(--kr);margin-top:7px;line-height:1.55;
+    display:none;
+  }
+  body.show-kr .kr{display:block;}
+  .sys .en{font-family:inherit;font-size:14px;color:var(--ink-soft);background:#f1ede3;border-radius:8px;padding:9px 11px;}
+  .block.playing.sys .en{background:var(--accent-soft);box-shadow:none;}
+
+  /* bottom bar */
+  .dock{
+    display:none;
+    position:fixed;left:0;right:0;bottom:0;z-index:20;
+    background:var(--card);
+    border-top:1px solid var(--line);
+    padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+  }
+  .dock.on{display:flex;gap:10px;}
+  .dock button{
+    flex:1;padding:13px;border-radius:11px;border:none;
+    font-size:14.5px;font-weight:700;font-family:inherit;cursor:pointer;
+  }
+  #playAll{background:var(--accent);color:#fff;}
+  #stopAll{background:#efece4;color:var(--ink-soft);flex:0 0 90px;}
+  .voice-warn{
+    display:none;margin:10px 18px 0;padding:11px 13px;border-radius:10px;
+    background:#fdf3e3;color:#8a6a2f;font-size:13px;line-height:1.5;
+  }
+</style>
+</head>
+<body class="show-kr">
+
+<header>
+  <h1>웹소설 리스닝 리더</h1>
+  <p>영어 문장을 붙여넣으면 문장마다 재생 버튼이 생겨요</p>
+</header>
+
+<div class="voice-warn" id="voiceWarn">영어 음성을 못 찾았어요. 설정 &gt; 손쉬운 사용 &gt; 콘텐츠 말하기 &gt; 음성에서 영어 음성을 다운로드한 뒤 페이지를 새로고침해 주세요.</div>
+
+<section class="setup" id="setup">
+  <textarea id="input" placeholder="여기에 챕터 텍스트를 붙여넣으세요.&#10;&#10;영어만 붙여넣어도 되고, 영어+한글 대역을 붙여넣으면 한글은 번역으로 자동 인식돼서 영어 아래에 표시돼요."></textarea>
+  <p class="hint">텍스트는 이 화면 안에서만 쓰이고 어디에도 저장·전송되지 않아요.</p>
+  <button class="btn-primary" id="build">리더 만들기</button>
+</section>
+
+<div class="controls" id="controls">
+  <div class="ctl-row">
+    <select id="voiceSel" aria-label="음성 선택"></select>
+    <button class="btn-mini" id="reset">새 텍스트</button>
+  </div>
+  <div class="ctl-row">
+    <div class="rate-wrap">
+      <span style="font-size:12.5px;color:var(--ink-soft);">속도</span>
+      <input type="range" id="rate" min="0.5" max="1.3" step="0.05" value="0.9">
+      <span class="rate-val" id="rateVal">0.90</span>
+    </div>
+    <label class="toggle"><input type="checkbox" id="krToggle" checked> 한글 보기</label>
+  </div>
+</div>
+
+<main class="reader" id="reader"></main>
+
+<div class="dock" id="dock">
+  <button id="playAll">▶ 처음부터 이어 듣기</button>
+  <button id="stopAll">정지</button>
+</div>
+
+<script>
+(function(){
+  var synth = window.speechSynthesis;
+  var blocks = [];        // {en, kr, sys}
+  var els = [];           // block elements
+  var current = -1;
+  var continuous = false;
+  var voices = [];
+
+  var $ = function(id){ return document.getElementById(id); };
+
+  function loadVoices(){
+    voices = synth.getVoices().filter(function(v){ return /^en(-|_)/i.test(v.lang); });
+    var sel = $('voiceSel');
+    sel.innerHTML = '';
+    if(!voices.length){ $('voiceWarn').style.display = 'block'; return; }
+    $('voiceWarn').style.display = 'none';
+    // prefer en-US, premium/enhanced/siri names first
+    voices.sort(function(a,b){
+      function score(v){
+        var s = 0;
+        if(/natural|online|neural/i.test(v.name)) s += 8; // Edge PC neural voices first
+        if(/en-US/i.test(v.lang)) s += 4;
+        if(/premium|enhanced|siri/i.test(v.name)) s += 2;
+        return -s;
+      }
+      return score(a) - score(b);
+    });
+    voices.forEach(function(v,i){
+      var o = document.createElement('option');
+      o.value = i;
+      o.textContent = v.name + ' (' + v.lang + ')';
+      sel.appendChild(o);
+    });
+  }
+  loadVoices();
+  if (typeof synth.onvoiceschanged !== 'undefined') synth.onvoiceschanged = loadVoices;
+
+  function hasHangul(s){ return /[\uAC00-\uD7A3]/.test(s); }
+  function hasEnglish(s){ return /[A-Za-z]{2,}/.test(s); }
+
+  function parse(text){
+    var lines = text.split(/\n+/).map(function(l){ return l.trim(); }).filter(Boolean);
+    var out = [];
+    lines.forEach(function(line){
+      // strip paragraph markers like [1]
+      if(/^\[\d+\]$/.test(line)) return;
+      if(hasHangul(line) && !hasEnglish(line)){
+        // Korean translation -> attach to last English block
+        if(out.length) out[out.length-1].kr = (out[out.length-1].kr ? out[out.length-1].kr + ' ' : '') + line;
+        return;
+      }
+      if(!hasEnglish(line)) return; // skip pure symbols/sfx
+      var sys = /^\[/.test(line); // game system window
+      out.push({ en: line, kr: '', sys: sys });
+    });
+    return out;
+  }
+
+  function stop(){
+    continuous = false;
+    synth.cancel();
+    setPlaying(-1);
+  }
+
+  function setPlaying(i){
+    if(current >= 0 && els[current]) els[current].classList.remove('playing');
+    current = i;
+    if(i >= 0 && els[i]){
+      els[i].classList.add('playing');
+      els[i].scrollIntoView({block:'center', behavior:'smooth'});
+    }
+  }
+
+  function speak(i){
+    synth.cancel();
+    if(i >= blocks.length){ setPlaying(-1); continuous = false; return; }
+    var u = new SpeechSynthesisUtterance(blocks[i].en.replace(/^\[|\]$/g,''));
+    var vi = parseInt($('voiceSel').value || '0', 10);
+    if(voices[vi]) u.voice = voices[vi];
+    u.lang = (voices[vi] && voices[vi].lang) || 'en-US';
+    u.rate = parseFloat($('rate').value);
+    u.onend = function(){
+      if(continuous){ speak(i+1); } else { setPlaying(-1); }
+    };
+    u.onerror = function(){ setPlaying(-1); continuous = false; };
+    setPlaying(i);
+    synth.speak(u);
+  }
+
+  function build(){
+    var text = $('input').value;
+    blocks = parse(text);
+    if(!blocks.length){ alert('영어 문장을 찾지 못했어요. 텍스트를 확인해 주세요.'); return; }
+    var reader = $('reader');
+    reader.innerHTML = '';
+    els = [];
+    blocks.forEach(function(b, i){
+      var div = document.createElement('div');
+      div.className = 'block' + (b.sys ? ' sys' : '');
+      var btn = document.createElement('button');
+      btn.className = 'play';
+      btn.setAttribute('aria-label', '문장 듣기');
+      btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>';
+      btn.addEventListener('click', function(){
+        if(current === i && synth.speaking){ stop(); return; }
+        continuous = false;
+        speak(i);
+      });
+      var txt = document.createElement('div');
+      txt.className = 'txt';
+      var en = document.createElement('div');
+      en.className = 'en';
+      en.textContent = b.en;
+      txt.appendChild(en);
+      if(b.kr){
+        var kr = document.createElement('div');
+        kr.className = 'kr';
+        kr.textContent = b.kr;
+        txt.appendChild(kr);
+      }
+      div.appendChild(btn);
+      div.appendChild(txt);
+      reader.appendChild(div);
+      els.push(div);
+    });
+    $('setup').style.display = 'none';
+    $('controls').classList.add('on');
+    reader.classList.add('on');
+    $('dock').classList.add('on');
+    window.scrollTo(0,0);
+  }
+
+  $('build').addEventListener('click', build);
+  $('reset').addEventListener('click', function(){
+    stop();
+    $('setup').style.display = 'block';
+    $('controls').classList.remove('on');
+    $('reader').classList.remove('on');
+    $('dock').classList.remove('on');
+    window.scrollTo(0,0);
+  });
+  $('rate').addEventListener('input', function(){
+    $('rateVal').textContent = parseFloat(this.value).toFixed(2);
+  });
+  $('krToggle').addEventListener('change', function(){
+    document.body.classList.toggle('show-kr', this.checked);
+  });
+  $('playAll').addEventListener('click', function(){
+    continuous = true;
+    speak(current >= 0 ? current : 0);
+  });
+  $('stopAll').addEventListener('click', stop);
+})();
+</script>
+</body>
+</html>
